@@ -21,7 +21,6 @@ relations entre eux.
 ## Authentification (`Auth`)
 
 | Méthode | Endpoint | Description | Auth |
-|---|---|---|---|
 | POST | `/auth/register` | Créer un compte (email, mot de passe) | non |
 | POST | `/auth/login` | Connexion, retourne `access_token` + `refresh_token` | non |
 | POST | `/auth/refresh` | Renouvelle l'`access_token` à partir du `refresh_token` | non |
@@ -30,7 +29,7 @@ relations entre eux.
 ## Compte & profil voyageur (`User`, `User_type`, `Settings`)
 
 | Méthode | Endpoint | Description | Auth |
-|---|---|---|---|
+
 | GET | `/users/me` | Compte de l'utilisateur connecté | oui |
 | PATCH | `/users/me` | Mise à jour du compte (email, téléphone...) | oui |
 | DELETE | `/users/me` | Suppression du compte | oui |
@@ -67,7 +66,6 @@ relations entre eux.
 ## Itinéraires (`Travel`)
 
 | Méthode | Endpoint | Description | Auth |
-|---|---|---|---|
 | GET | `/trips` | Itinéraires actifs/à venir de l'utilisateur | oui |
 | GET | `/trips/:id` | Détail d'un itinéraire (jours, étapes, transport) | oui |
 | PATCH | `/trips/:id` | Édition générale (dates, titre...) | oui |
@@ -79,7 +77,6 @@ relations entre eux.
 ## Historique & carnet (`Travel_history`)
 
 | Méthode | Endpoint | Description | Auth |
-|---|---|---|---|
 | GET | `/trips/history` | Itinéraires terminés | oui |
 | GET | `/trips/:id/journal` | Carnet de voyage associé | oui |
 | POST | `/trips/:id/journal` | Ajoute une entrée (photo, note) au carnet | oui |
@@ -88,7 +85,6 @@ relations entre eux.
 ## Favoris (`Favorites`)
 
 | Méthode | Endpoint | Description | Auth |
-|---|---|---|---|
 | GET | `/favorites` | Favoris de l'utilisateur | oui |
 | POST | `/favorites` | Ajoute une destination/activité/ville en favori | oui |
 | DELETE | `/favorites/:id` | Retire un favori | oui |
@@ -96,7 +92,6 @@ relations entre eux.
 ## Avis (`Commentary`)
 
 | Méthode | Endpoint | Description | Auth |
-|---|---|---|---|
 | GET | `/activities/:id/reviews` | Avis sur une activité | oui |
 | POST | `/activities/:id/reviews` | Publie un avis (note + texte) | oui |
 | DELETE | `/reviews/:id` | Supprime son propre avis | oui |
