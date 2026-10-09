@@ -35,5 +35,5 @@ valide, sinon le cycle recommence sur une nouvelle proposition.
 
 ## Stack retenue (voir `documentation/` pour le détail des arbitrages)
 
-Backend NestJS (monolithe modulaire), Expo (React Native) côté front, LLM local via Ollama
+Backend NestJS, Expo (React Native) côté front, LLM local via Ollama
 pour la génération d'itinéraire et le chatbot RAG.
