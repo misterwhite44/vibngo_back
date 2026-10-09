@@ -78,7 +78,7 @@ Hors microservices :
                ▼                                  ▼                                  ▼
 ┌─────────────────────────────┐    ┌─────────────────────────────┐    ┌─────────────────────────────┐
 │ PostgreSQL                  │    │ PostgreSQL                  │    │ MongoDB                     │
-│ schéma identity             │    │ schéma travel               │    │ Redis : cache IA            │
+│ schéma identity             │    │ schéma travel               │    │       │
 │ Redis : Session             │    │ Redis : cache fiches, Queue │    │                             │
 └─────────────────────────────┘    └─────────────────────────────┘    └─────────────────────────────┘
 
