@@ -1,8 +1,7 @@
 # Services — documentation
 
-Ce que fait chaque service listé dans `pg-liste.md`, `redis-liste.md`, `mongo-liste.md`
-et `redis-liste.md`. Un service = une classe injectable NestJS portant une responsabilité
-métier précise.
+Ce que fait chaque service listé dans `pg-liste.md`, `mongo-liste.md` et `redis-liste.md`.
+Un service = une classe injectable NestJS portant une responsabilité métier précise.
 
 ## PostgreSQL (`pg-liste.md`)
 
@@ -11,9 +10,14 @@ Inscription, connexion, hash du mot de passe, émission/vérification des JWT (a
 refresh). S'appuie sur `Session` (Redis) pour la révocation.
 
 **User**
-Compte utilisateur, profil voyageur et questionnaire de personnalité : lecture/mise à
-jour du compte, réponses au questionnaire, calcul du profil dominant. Déclenche la mise
-à jour du vecteur profil (`Profile_vector`, Qdrant) à chaque changement.
+Compte utilisateur et questionnaire de personnalité : lecture/mise à jour du compte,
+collecte des réponses au questionnaire. Transmet les réponses à `User_type` pour le
+calcul du profil dominant.
+
+**User_type**
+Calcule et stocke le profil voyageur dominant (explorateur/épicurien/sociable/connecteur)
+et les scores par axe à partir des réponses au questionnaire fournies par `User`. Pas de
+base vectorielle : un score direct par axe, recalculé à chaque nouvelle réponse.
 
 **Settings**
 Paramètres de confidentialité et de notifications (géolocalisation, visibilité
@@ -31,11 +35,11 @@ gestion de contenu.
 
 **Itinerary_generation**
 Orchestre la génération d'un itinéraire à partir du formulaire de besoins : vérifie
-`Cache` (Redis), sinon lit les candidats via `Catalog`, appelle `Recommendation` (Qdrant),
-le LLM local (Ollama) pour interpréter le besoin et organiser le planning, et l'API
-Google Maps pour les distances/trajets (voir `flux/principal.md`). Produit une
-*proposition* — ne persiste rien lui-même. Ne transmet le résultat à `Travel` que si
-l'utilisateur valide.
+`Cache` (Redis), sinon lit les candidats via `Catalog` et les transmet directement au LLM
+local (Ollama), qui choisit et organise le planning lui-même (pas de scoring par
+similarité, pas de base vectorielle), puis à l'API Google Maps pour les distances/trajets
+(voir `flux/principal.md`). Produit une *proposition* — ne persiste rien lui-même. Ne
+transmet le résultat à `Travel` que si l'utilisateur valide.
 
 **Travel**
 Persistance et édition d'un itinéraire une fois confirmé : jours, étapes, transport,
