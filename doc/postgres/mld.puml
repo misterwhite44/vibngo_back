@@ -1,0 +1,469 @@
+@startuml mld-postgresql
+' ===========================================================================
+' MLD — base PostgreSQL de Triply
+' Ticket #94 (sous-ticket de #93). Document de référence : mcd-mld.md
+'
+' 28 tables, deux schémas, un microservice par schéma.
+'   *  colonne obligatoire (NOT NULL)      «PK» clé primaire
+'   «FK» clé étrangère                     «U»  contrainte d'unicité
+'   «id» identifiant d'un autre microservice : PAS de clé étrangère
+'
+' Pattes (notation « patte de corbeau ») :
+'   ||--||  un à un            ||--o|  un à zéro-ou-un
+'   ||--o{  un à zéro-ou-n     ||--|{  un à un-ou-n
+'   |o--o{  zéro-ou-un à zéro-ou-n
+'   Trait pointillé (..) : lien logique entre deux microservices, non
+'   matérialisé en base (aucun REFERENCES possible).
+'
+' Rendu : plantuml doc/postgres/mld.puml
+' ===========================================================================
+
+skinparam linetype ortho
+skinparam shadowing false
+skinparam nodesep 40
+skinparam ranksep 50
+skinparam defaultFontSize 11
+hide circle
+
+skinparam class {
+  FontStyle bold
+  BorderColor #3C3C3C
+  BackgroundColor #FFFFFF
+  AttributeFontStyle plain
+  BackgroundColor<<ref>> #ECECEC
+  BorderColor<<ref>> #6E6E6E
+  BackgroundColor<<bonus>> #F3F0FA
+  BorderColor<<bonus>> #6A5ACD
+}
+skinparam package {
+  BorderColor #8A8A8A
+  BackgroundColor #FBFBFB
+  FontStyle bold
+}
+
+' ======================  schéma identity (Identity)  ======================
+
+package "schéma  identity          rôle  triply_identity" as PKG_IDENTITY {
+
+  entity "users" as users {
+    {field} * id : uuid <<PK>>
+    --
+    {field} * email : text <<U sur lower(email)>>
+    {field} * password_hash : text
+    {field} phone : text
+    {field} * status : text <<CHECK active|suspended|deleted>>
+    {field} * created_at : timestamptz
+    {field} * updated_at : timestamptz
+    {field} deleted_at : timestamptz
+  }
+
+  entity "traveler_types" as traveler_types <<ref>> {
+    {field} * code : text <<PK>>
+    --
+    {field} * label : text
+    {field} description : text
+    {field} * is_active : boolean
+  }
+
+  entity "profile_axes" as profile_axes <<ref>> {
+    {field} * code : text <<PK>>
+    --
+    {field} * label : text
+    {field} * position : smallint <<U>>
+  }
+
+  entity "questionnaire_questions" as questions {
+    {field} * id : uuid <<PK>>
+    --
+    {field} * code : text <<U>>
+    {field} * label : text
+    {field} * axis_code : text <<FK>>
+    {field} * position : smallint <<U>>
+    {field} * weight : numeric(4,2)
+    {field} * reverse_scored : boolean
+    {field} * is_active : boolean
+  }
+
+  entity "questionnaire_answers" as answers {
+    {field} * id : uuid <<PK>>
+    --
+    {field} * user_id : uuid <<FK>>
+    {field} * question_id : uuid <<FK>>
+    {field} * value : smallint <<CHECK 1..5>>
+    {field} * answered_at : timestamptz
+    .. <<U (user_id, question_id)>> ..
+  }
+
+  entity "traveler_profiles" as profiles {
+    {field} * user_id : uuid <<PK, FK>>
+    --
+    {field} * dominant_type_code : text <<FK>>
+    {field} * computed_at : timestamptz
+  }
+
+  entity "traveler_profile_scores" as scores {
+    {field} * user_id : uuid <<PK, FK>>
+    {field} * axis_code : text <<PK, FK>>
+    --
+    {field} * score : numeric(5,2) <<CHECK 0..100>>
+  }
+
+  entity "settings" as settings {
+    {field} * user_id : uuid <<PK, FK>>
+    --
+    {field} * notifications_enabled : boolean
+    {field} * geolocation_enabled : boolean
+    {field} * community_visible : boolean
+    {field} * privacy_level : text <<CHECK standard|strict>>
+    {field} * offline_mode_enabled : boolean
+    {field} * updated_at : timestamptz
+  }
+
+  entity "notifications" as notifications <<bonus>> {
+    {field} * id : uuid <<PK>>
+    --
+    {field} * user_id : uuid <<FK>>
+    {field} * type : text
+    {field} * message : text
+    {field} payload : jsonb
+    {field} scheduled_at : timestamptz
+    {field} sent_at : timestamptz
+    {field} read_at : timestamptz
+    {field} * created_at : timestamptz
+  }
+}
+
+users     ||--|| settings
+users     ||--o| profiles
+users     ||--o{ answers
+users     ||--o{ notifications
+questions ||--o{ answers
+profile_axes   ||--o{ questions
+profiles       ||--|{ scores
+profile_axes   ||--o{ scores
+traveler_types ||--o{ profiles
+
+' =======================  schéma travel (Travel)  =========================
+
+package "schéma  travel          rôle  triply_travel" as PKG_TRAVEL {
+
+  entity "countries" as countries <<ref>> {
+    {field} * id : uuid <<PK>>
+    --
+    {field} * code : char(2) <<U — ISO 3166-1>>
+    {field} * name : text
+  }
+
+  entity "cities" as cities {
+    {field} * id : uuid <<PK>>
+    --
+    {field} * country_id : uuid <<FK>>
+    {field} * name : text
+    {field} latitude : numeric(9,6)
+    {field} longitude : numeric(9,6)
+    {field} timezone : text
+    .. <<U (country_id, name)>> ..
+  }
+
+  entity "destinations" as destinations {
+    {field} * id : uuid <<PK>>
+    --
+    {field} * city_id : uuid <<FK>>
+    {field} * name : text
+    {field} description : text
+    {field} cover_image_url : text
+    {field} * popularity_score : numeric(5,2)
+    {field} * created_at : timestamptz
+    {field} * updated_at : timestamptz
+    .. <<U (city_id, name)>> ..
+    .. index GIN trigramme sur name ..
+  }
+
+  entity "activity_categories" as categories <<ref>> {
+    {field} * code : text <<PK>>
+    --
+    {field} * label : text
+    {field} * is_accommodation : boolean
+    {field} * is_active : boolean
+  }
+
+  entity "partners" as partners {
+    {field} * id : uuid <<PK>>
+    --
+    {field} * name : text
+    {field} contact_email : text
+    {field} contact_phone : text
+    {field} website : text
+    {field} * created_at : timestamptz
+  }
+
+  entity "activities" as activities {
+    {field} * id : uuid <<PK>>
+    --
+    {field} * destination_id : uuid <<FK>>
+    {field} * category_code : text <<FK>>
+    {field} partner_id : uuid <<FK>>
+    {field} * name : text
+    {field} description : text
+    {field} address : text
+    {field} latitude : numeric(9,6)
+    {field} longitude : numeric(9,6)
+    {field} price_range : text
+    {field} opening_hours : jsonb
+    {field} contact_phone : text
+    {field} contact_website : text
+    {field} booking_url : text
+    {field} * created_at : timestamptz
+    {field} * updated_at : timestamptz
+  }
+
+  entity "activity_media" as media {
+    {field} * id : uuid <<PK>>
+    --
+    {field} * activity_id : uuid <<FK>>
+    {field} * url : text
+    {field} * origin : text <<CHECK official|community>>
+    {field} user_id : uuid <<id Identity>>
+    {field} * position : smallint
+    {field} * created_at : timestamptz
+    .. CHECK (origin = 'official') = (user_id IS NULL) ..
+  }
+
+  entity "activity_recommended_profiles" as reco {
+    {field} * activity_id : uuid <<PK, FK>>
+    {field} * traveler_type_code : text <<PK, id Identity>>
+  }
+
+  entity "trips" as trips {
+    {field} * id : uuid <<PK>>
+    --
+    {field} * user_id : uuid <<id Identity>>
+    {field} title : text
+    {field} * status : text <<CHECK draft|generated|active|completed|archived>>
+    {field} * start_date : date
+    {field} * end_date : date
+    {field} budget : numeric(10,2)
+    {field} transport_mode : text
+    {field} origin_city_id : uuid <<FK>>
+    {field} * destination_city_id : uuid <<FK>>
+    {field} proposal_id : text <<clé Redis>>
+    {field} * created_at : timestamptz
+    {field} * updated_at : timestamptz
+    .. CHECK (end_date >= start_date) ..
+  }
+
+  entity "trip_travelers" as travelers {
+    {field} * trip_id : uuid <<PK, FK>>
+    {field} * user_id : uuid <<PK, id Identity>>
+    --
+    {field} * role : text <<CHECK owner|guest>>
+    {field} * joined_at : timestamptz
+    .. U partiel (trip_id) WHERE role = 'owner' ..
+  }
+
+  entity "trip_days" as days {
+    {field} * id : uuid <<PK>>
+    --
+    {field} * trip_id : uuid <<FK>>
+    {field} * day_index : smallint
+    {field} * date : date
+    .. <<U (trip_id, day_index)>> ..
+    .. <<U (trip_id, date)>> ..
+  }
+
+  entity "trip_steps" as steps {
+    {field} * id : uuid <<PK>>
+    --
+    {field} * trip_day_id : uuid <<FK>>
+    {field} * sequence : smallint
+    {field} * type : text <<CHECK activity|transport|accommodation|meal>>
+    {field} activity_id : uuid <<FK>>
+    {field} start_time : timestamptz
+    {field} end_time : timestamptz
+    {field} * status : text <<CHECK planned|confirmed|modified|skipped>>
+    {field} notes : text
+    {field} * created_at : timestamptz
+    {field} * updated_at : timestamptz
+    .. <<U (trip_day_id, sequence) DEFERRABLE>> ..
+    .. CHECK type <> 'activity' OR activity_id IS NOT NULL ..
+  }
+
+  entity "trip_transports" as transports {
+    {field} * id : uuid <<PK>>
+    --
+    {field} * trip_id : uuid <<FK>>
+    {field} trip_step_id : uuid <<FK>>
+    {field} * leg : text <<CHECK outbound|return|intra>>
+    {field} * mode : text
+    {field} from_city_id : uuid <<FK>>
+    {field} to_city_id : uuid <<FK>>
+    {field} departs_at : timestamptz
+    {field} arrives_at : timestamptz
+    {field} distance_km : numeric(8,2)
+    {field} duration_min : integer
+    {field} * created_at : timestamptz
+  }
+
+  entity "bookings" as bookings {
+    {field} * id : uuid <<PK>>
+    --
+    {field} * trip_id : uuid <<FK>>
+    {field} trip_step_id : uuid <<FK>>
+    {field} * category : text <<CHECK flight|train|accommodation|activity>>
+    {field} provider : text
+    {field} reference_code : text
+    {field} booking_url : text
+    {field} * status : text <<CHECK pending|confirmed|cancelled>>
+    {field} reminder_at : timestamptz
+    {field} * created_at : timestamptz
+    {field} * updated_at : timestamptz
+    .. U partiel (trip_id, category, reference_code) ..
+  }
+
+  entity "journal_entries" as entries {
+    {field} * id : uuid <<PK>>
+    --
+    {field} * trip_id : uuid <<FK>>
+    {field} trip_day_id : uuid <<FK>>
+    {field} trip_step_id : uuid <<FK>>
+    {field} * user_id : uuid <<id Identity>>
+    {field} text : text
+    {field} summary_word : text
+    {field} * created_at : timestamptz
+    {field} * updated_at : timestamptz
+  }
+
+  entity "journal_photos" as photos {
+    {field} * id : uuid <<PK>>
+    --
+    {field} * journal_entry_id : uuid <<FK>>
+    {field} * url : text
+    {field} * position : smallint
+    {field} * created_at : timestamptz
+    .. <<U (journal_entry_id, position) DEFERRABLE>> ..
+  }
+
+  entity "journal_exports" as exports {
+    {field} * id : uuid <<PK>>
+    --
+    {field} * trip_id : uuid <<FK>>
+    {field} * user_id : uuid <<id Identity>>
+    {field} * status : text <<CHECK pending|processing|done|failed>>
+    {field} pdf_url : text
+    {field} job_id : text
+    {field} * requested_at : timestamptz
+    {field} completed_at : timestamptz
+    .. CHECK status <> 'done' OR pdf_url IS NOT NULL ..
+  }
+
+  entity "favorites" as favorites {
+    {field} * id : uuid <<PK>>
+    --
+    {field} * user_id : uuid <<id Identity>>
+    {field} * target_type : text <<CHECK destination|activity|city>>
+    {field} * target_id : uuid <<cible polymorphe — pas de FK>>
+    {field} * status : text <<CHECK favorite|considered>>
+    {field} * created_at : timestamptz
+    .. <<U (user_id, target_type, target_id)>> ..
+  }
+
+  entity "reviews" as reviews {
+    {field} * id : uuid <<PK>>
+    --
+    {field} * activity_id : uuid <<FK>>
+    {field} * user_id : uuid <<id Identity>>
+    {field} * rating : smallint <<CHECK 1..5>>
+    {field} comment : text
+    {field} * status : text <<CHECK published|hidden|reported>>
+    {field} * created_at : timestamptz
+    {field} * updated_at : timestamptz
+    .. <<U (activity_id, user_id)>> ..
+  }
+}
+
+' --- catalogue ---
+countries   ||--o{ cities
+cities      ||--o{ destinations
+destinations ||--o{ activities
+categories  ||--o{ activities
+partners    |o--o{ activities
+activities  ||--o{ media
+activities  ||--o{ reco
+activities  ||--o{ reviews
+
+' --- itinéraire ---
+trips  ||--|{ travelers
+trips  ||--|{ days
+days   ||--o{ steps
+activities |o--o{ steps
+trips  ||--o{ transports
+steps  |o--o| transports
+trips  ||--o{ bookings
+steps  |o--o{ bookings
+cities ||--o{ trips : destination_city_id
+cities |o--o{ trips : origin_city_id
+
+' --- carnet ---
+trips   ||--o{ entries
+days    |o--o{ entries
+steps   |o--o{ entries
+entries ||--o{ photos
+trips   ||--o{ exports
+
+' ====================  franchissement de frontière  =======================
+'   pointillés : identifiant recopié, aucun REFERENCES possible
+
+users ||..o{ trips
+users ||..o{ travelers
+users ||..o{ favorites
+users ||..o{ reviews
+users ||..o{ entries
+users ||..o{ exports
+users ||..o{ media
+traveler_types ||..o{ reco
+
+note as N_FRONTIERE
+  **Aucune clé étrangère entre les deux schémas.**
+  Les liens en pointillés n'existent pas en base :
+  triply_travel n'a aucun USAGE sur le schéma identity.
+  Ce sont des uuid nus (user_id) ou des codes recopiés
+  (traveler_type_code), validés par l'API du service
+  propriétaire. La suppression d'un compte passe par
+  l'événement user.deleted, pas par un ON DELETE CASCADE.
+end note
+N_FRONTIERE .. users
+
+note bottom of favorites
+  target_id n'a pas de clé étrangère :
+  la cible est l'une de trois tables
+  (cities, destinations, activities)
+  et PostgreSQL ne sait pas référencer
+  une table variable.
+end note
+
+note bottom of destinations
+  Emplacement réservé pour le vecteur (hors MVP) :
+  embedding vector(768), extension pgvector,
+  index HNSW vector_cosine_ops.
+  Aucune colonne créée aujourd'hui — voir orm.md (#97).
+end note
+
+note bottom of activities
+  averageRating n'est pas une colonne :
+  AVG(rating) calculé sur reviews
+  (requête TypedSQL).
+end note
+
+legend right
+  |= |= signification |
+  | * | colonne obligatoire (NOT NULL) |
+  | «PK» / «FK» | clé primaire / clé étrangère |
+  | «U» | contrainte d'unicité |
+  | «id Identity» | identifiant d'un autre microservice, sans FK |
+  | boîte grise | table de référence (seed) |
+  | <back:#F3F0FA>boîte violette</back> | bonus, hors MVP |
+  | trait plein | clé étrangère réelle |
+  | pointillés | lien logique entre microservices |
+endlegend
+
+@enduml

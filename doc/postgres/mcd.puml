@@ -1,0 +1,309 @@
+@startuml mcd-postgresql
+' ===========================================================================
+' MCD — base PostgreSQL de Triply
+' Ticket #94 (sous-ticket de #93). Document de référence : mcd-mld.md
+'
+' Notation Merise :
+'   - entité            : boîte blanche, identifiant souligné
+'   - référentiel       : boîte grise (table de référence alimentée par le seed)
+'   - association porteuse : boîte jaune, ses attributs portés en dessous
+'   - cardinalité (min,max) : écrite DU CÔTÉ DE L'ENTITÉ QU'ELLE DÉCRIT
+'     « une occurrence de cette entité participe de min à max fois »
+'     (attention : c'est l'inverse du placement des multiplicités UML)
+'   - trait plein   : association interne à un microservice
+'   - trait pointillé : association qui traverse la frontière entre deux
+'     microservices — en base, un simple identifiant uuid, jamais de clé étrangère
+'
+' Rendu : plantuml doc/postgres/mcd.puml
+' ===========================================================================
+
+skinparam linetype ortho
+skinparam shadowing false
+skinparam nodesep 45
+skinparam ranksep 55
+skinparam defaultFontSize 12
+hide circle
+
+skinparam class {
+  FontStyle bold
+  BorderColor #3C3C3C
+  BackgroundColor #FFFFFF
+  AttributeFontStyle plain
+  BackgroundColor<<ref>> #ECECEC
+  BorderColor<<ref>> #6E6E6E
+  BackgroundColor<<assoc>> #FFF3CD
+  BorderColor<<assoc>> #A07800
+}
+skinparam package {
+  BorderColor #8A8A8A
+  BackgroundColor #FBFBFB
+  FontStyle bold
+}
+
+' ===========================  microservice Identity  =======================
+
+package "schéma  identity" as PKG_IDENTITY {
+
+  class UTILISATEUR {
+    __email__
+    mot de passe
+    téléphone
+    statut
+    date de création
+  }
+
+  class "PARAMÈTRES" as PARAMETRES {
+    notifications
+    géolocalisation
+    visibilité communautaire
+    niveau de confidentialité
+    mode hors-ligne
+  }
+
+  class QUESTION {
+    __code__
+    libellé
+    position
+    poids
+    inversée
+  }
+
+  class AXE <<ref>> {
+    __code__
+    libellé
+    position
+  }
+
+  class "PROFIL VOYAGEUR" as PROFIL {
+    date de calcul
+  }
+
+  class "TYPE VOYAGEUR" as TYPE_VOYAGEUR <<ref>> {
+    __code__
+    libellé
+    description
+  }
+
+  class "NOTIFICATION (B)" as NOTIFICATION {
+    type
+    message
+    date d'envoi
+    date de lecture
+  }
+
+  class "répond" as REPOND <<assoc>> {
+    valeur
+  }
+
+  class "est noté sur" as NOTE_SUR <<assoc>> {
+    score
+  }
+}
+
+UTILISATEUR "(1,1)" -- "(1,1)" PARAMETRES   : est paramétré par
+UTILISATEUR "(0,1)" -- "(1,1)" PROFIL       : est profilé par
+UTILISATEUR "(0,n)" -- "(1,1)" NOTIFICATION : reçoit
+
+UTILISATEUR "(0,n)" -- REPOND
+REPOND      -- "(0,n)" QUESTION
+
+QUESTION "(1,1)" -- "(0,n)" AXE : mesure
+
+PROFIL   "(1,n)" -- NOTE_SUR
+NOTE_SUR -- "(0,n)" AXE
+
+PROFIL "(1,1)" -- "(0,n)" TYPE_VOYAGEUR : a pour dominante
+
+' ============================  microservice Travel  ========================
+
+package "schéma  travel" as PKG_TRAVEL {
+
+  class PAYS {
+    __code ISO__
+    nom
+  }
+
+  class VILLE {
+    __nom__
+    latitude
+    longitude
+    fuseau horaire
+  }
+
+  class DESTINATION {
+    __nom__
+    description
+    image de couverture
+    score de popularité
+  }
+
+  class "CATÉGORIE" as CATEGORIE <<ref>> {
+    __code__
+    libellé
+    est un hébergement
+  }
+
+  class PARTENAIRE {
+    __nom__
+    contacts
+  }
+
+  class "ACTIVITÉ" as ACTIVITE {
+    __nom__
+    description
+    adresse
+    coordonnées
+    fourchette de prix
+    horaires
+    contacts
+    lien de réservation
+  }
+
+  class "MÉDIA" as MEDIA {
+    url
+    origine
+  }
+
+  class AVIS {
+    note
+    commentaire
+    statut
+  }
+
+  class VOYAGE {
+    titre
+    statut
+    dates
+    budget
+    mode de transport
+  }
+
+  class "JOURNÉE" as JOURNEE {
+    __index du jour__
+    date
+  }
+
+  class "ÉTAPE" as ETAPE {
+    __ordre__
+    type
+    horaires
+    statut
+    notes
+  }
+
+  class TRAJET {
+    segment
+    mode
+    départ
+    arrivée
+    distance
+    durée
+  }
+
+  class "RÉSERVATION" as RESERVATION {
+    catégorie
+    prestataire
+    référence
+    statut
+    rappel
+  }
+
+  class "ENTRÉE DE CARNET" as ENTREE {
+    texte
+    mot résumé
+  }
+
+  class PHOTO {
+    url
+    position
+  }
+
+  class EXPORT {
+    statut
+    url du PDF
+  }
+
+  class FAVORI {
+    type de cible
+    statut
+  }
+
+  class "réunit" as VOYAGEUR <<assoc>> {
+    rôle
+  }
+}
+
+' --- catalogue ---
+PAYS        "(0,n)" -- "(1,1)" VILLE       : contient
+VILLE       "(0,n)" -- "(1,1)" DESTINATION : héberge
+DESTINATION "(0,n)" -- "(1,1)" ACTIVITE    : propose
+CATEGORIE   "(0,n)" -- "(1,1)" ACTIVITE    : classe
+PARTENAIRE  "(0,n)" -- "(0,1)" ACTIVITE    : exploite
+ACTIVITE    "(0,n)" -- "(1,1)" MEDIA       : est illustrée par
+ACTIVITE    "(0,n)" -- "(1,1)" AVIS        : reçoit
+
+' --- itinéraire ---
+VOYAGE  "(1,n)" -- "(1,1)" JOURNEE     : se déroule sur
+JOURNEE "(0,n)" -- "(1,1)" ETAPE       : enchaîne
+ETAPE   "(0,1)" -- "(0,n)" ACTIVITE    : réalise
+VOYAGE  "(0,n)" -- "(1,1)" TRAJET      : emprunte
+VOYAGE  "(0,n)" -- "(1,1)" RESERVATION : regroupe
+RESERVATION "(0,1)" -- "(0,1)" ETAPE   : couvre
+VILLE   "(0,n)" -- "(1,1)" VOYAGE      : est destination de
+VILLE   "(0,n)" -- "(0,1)" VOYAGE      : est origine de
+
+' --- carnet de voyage ---
+VOYAGE "(0,n)" -- "(1,1)" ENTREE : est raconté par
+ENTREE "(0,1)" -- "(0,n)" ETAPE  : illustre
+ENTREE "(0,n)" -- "(1,1)" PHOTO  : contient
+VOYAGE "(0,n)" -- "(1,1)" EXPORT : est exporté en
+
+' --- favoris (cible exclusive) ---
+FAVORI "(0,1)" -- "(0,n)" VILLE       : cible
+FAVORI "(0,1)" -- "(0,n)" DESTINATION : cible
+FAVORI "(0,1)" -- "(0,n)" ACTIVITE    : cible
+
+note bottom of FAVORI
+  Exclusion (X) : une cible et une seule
+  parmi ville, destination, activité.
+  En base : (type de cible, identifiant),
+  sans clé étrangère.
+end note
+
+' ====================  franchissement de frontière  ========================
+'   pointillés = identifiant uuid recopié, aucune clé étrangère possible
+
+VOYAGE   "(1,n)" .. VOYAGEUR
+VOYAGEUR .. "(0,n)" UTILISATEUR
+
+AVIS     "(1,1)" .. "(0,n)" UTILISATEUR   : est rédigé par
+FAVORI   "(1,1)" .. "(0,n)" UTILISATEUR   : appartient à
+MEDIA    "(0,1)" .. "(0,n)" UTILISATEUR   : est déposé par
+ACTIVITE "(0,n)" .. "(0,n)" TYPE_VOYAGEUR : est recommandée à
+
+note as N_FRONTIERE
+  **Frontière entre microservices**
+  Les associations en pointillés ne sont pas
+  des clés étrangères : le schéma travel ne
+  peut pas lire le schéma identity.
+  Côté base, il n'en reste qu'un uuid nu
+  (trips.user_id, reviews.user_id, …) ou un
+  code recopié (traveler_type_code).
+  La cohérence est tenue par l'API, pas par
+  PostgreSQL.
+end note
+N_FRONTIERE .. UTILISATEUR
+
+legend right
+  |= |= signification |
+  | boîte blanche | entité |
+  | boîte grise | référentiel (seed) |
+  | <back:#FFF3CD>boîte jaune</back> | association porteuse |
+  | __souligné__ | identifiant |
+  | (min,max) | cardinalité de l'entité adjacente |
+  | trait plein | interne à un microservice |
+  | pointillés | traverse la frontière : uuid, pas de FK |
+  | (B) | bonus, hors MVP |
+endlegend
+
+@enduml
