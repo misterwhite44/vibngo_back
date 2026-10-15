@@ -11,7 +11,7 @@ stade conception/architecture (liste des services, schéma, flux) — le code ap
 | [`documentation/`](documentation/) | Docs produit/business d'origine (fonctionnalités, MVP, MoSCoW, choix technos, IA, RGPD...) |
 | [`services/`](services/) | Liste des services par base (`pg-liste.md`, `mongo-liste.md`, `redis-liste.md`), leur description (`service.md`) et un schéma d'ensemble (`schema.md`) |
 | [`flux/`](flux/) | Flux principal de l'application (`principal.md`) |
-| [`api/`](api/) | Contrats d'API et outils d'accès par base — PostgreSQL : routes (`endpoints.md`), corps des requêtes/réponses (`schemas.md`), ORM et migrations (`orm.md`) |
+| [`api/`](api/) | Contrats d'API et outils d'accès par base — PostgreSQL et Redis : routes (`endpoints.md`), corps des requêtes/réponses et structures (`schemas.md`), ORM ou client et migrations (`orm.md`) |
 
 ## Architecture de persistance
 
@@ -42,3 +42,6 @@ pour la génération d'itinéraire et le chatbot RAG.
 Accès à PostgreSQL : **Prisma 7**, un `schema.prisma` et des migrations par microservice,
 `prisma migrate deploy` au démarrage — justification et alternatives écartées dans
 [`api/postgres/orm.md`](api/postgres/orm.md).
+
+Accès à Redis : rôles `redis-core` et `redis-cache`, propositions de routes, structures
+de clés et client/queues dans [`api/redis/`](api/redis/).
