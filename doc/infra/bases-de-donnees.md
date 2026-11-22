@@ -7,7 +7,7 @@ Deux environnements, **0 € l'un comme l'autre** :
 | PostgreSQL (Identity, Travel) | Conteneur `pgvector/pgvector:pg18` | [Neon](https://neon.com) Free, PostgreSQL 18, région Frankfurt |
 | MongoDB (Assistant) | Conteneur `mongo:8.0`, replica set à un nœud | [MongoDB Atlas](https://www.mongodb.com/atlas) cluster Free (8.0), région Paris ou Frankfurt |
 | `redis-core` (sessions, BullMQ, propositions) | Conteneur `redis:7.4`, AOF, `noeviction` | [Upstash](https://upstash.com) Free, éviction désactivée |
-| `redis-cache` (fiches, classements) | Conteneur `redis:7.4`, sans persistance, `allkeys-lru` | [Redis Cloud](https://redis.io/cloud/) Free 30 Mo, éviction `allkeys-lru` |
+| `redis-cache` (fiches, classements) | Conteneur `redis:7.4`, sans persistance, `allkeys-lru` | La même base Upstash que `redis-core` (choix retenu). Option : [Redis Cloud](https://redis.io/cloud/) Free 30 Mo en `allkeys-lru` |
 
 Les deux environnements utilisent **les mêmes scripts** pour créer la structure :
 
@@ -116,7 +116,9 @@ compte en offre payante. Ne pas en ajouter tant qu'on reste en gratuit.
 3. **Upstash** (`redis-core`) : base Redis, région Europe (Frankfurt), TLS activé.
    **Laisser l'éviction désactivée** (réglage par défaut) : une révocation de JWT ou un job
    BullMQ ne doit jamais être évincé. URL `rediss://...` → `REDIS_CORE_URL`.
-4. **Redis Cloud** (`redis-cache`) : base *Free 30 Mo*, région Europe. Régler la politique
+4. **`redis-cache`** : en place, il partage la base Upstash (`REDIS_CACHE_URL` = `REDIS_CORE_URL`).
+   Pas d'éviction LRU dans ce cas : **toute clé de cache doit avoir un TTL**. Option si le
+   cache grossit : **Redis Cloud**, base *Free 30 Mo*, région Europe. Régler la politique
    d'éviction sur `allkeys-lru`. URL → `REDIS_CACHE_URL`.
 
 ### 2. Remplir `.env.production`
