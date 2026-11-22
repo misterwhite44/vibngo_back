@@ -4,7 +4,7 @@ Deux environnements, **0 € l'un comme l'autre** :
 
 | Base | Développement (local) | Production (offres gratuites) |
 |---|---|---|
-| PostgreSQL (Identity, Travel) | Conteneur `pgvector/pgvector:pg16` | [Neon](https://neon.com) Free, PostgreSQL 16, région Frankfurt |
+| PostgreSQL (Identity, Travel) | Conteneur `pgvector/pgvector:pg18` | [Neon](https://neon.com) Free, PostgreSQL 18, région Frankfurt |
 | MongoDB (Assistant) | Conteneur `mongo:8.0`, replica set à un nœud | [MongoDB Atlas](https://www.mongodb.com/atlas) cluster Free (8.0), région Paris ou Frankfurt |
 | `redis-core` (sessions, BullMQ, propositions) | Conteneur `redis:7.4`, AOF, `noeviction` | [Upstash](https://upstash.com) Free, éviction désactivée |
 | `redis-cache` (fiches, classements) | Conteneur `redis:7.4`, sans persistance, `allkeys-lru` | [Redis Cloud](https://redis.io/cloud/) Free 30 Mo, éviction `allkeys-lru` |
@@ -57,6 +57,9 @@ Prisma en dev, par service : `prisma migrate dev --name <nom>` avec l'URL du ser
 rôle ne voit que son schéma : `triply_travel` n'a aucun droit sur `identity`, et personne ne
 peut créer de table dans `public`.
 
+Dev et prod tournent en **PostgreSQL 18** (version par défaut de Neon). Un volume créé avec
+une version plus ancienne ne démarre pas en 18 : `docker compose down -v` puis `up -d`.
+
 Les ports ne sont ouverts que sur `127.0.0.1`. S'ils sont déjà pris, les changer dans `.env`
 (`PG_PORT`, `MONGO_PORT`, `REDIS_CORE_PORT`, `REDIS_CACHE_PORT`) et dans les URLs.
 
@@ -73,7 +76,7 @@ compte en offre payante. Ne pas en ajouter tant qu'on reste en gratuit.
 
 ### 1. Créer les services
 
-1. **Neon** : nouveau projet, PostgreSQL 16, région *AWS Europe Central 1 (Frankfurt)* (non
+1. **Neon** : nouveau projet, PostgreSQL 18 (version par défaut de Neon), région *AWS Europe Central 1 (Frankfurt)* (non
    modifiable ensuite). Créer une base `triply`. Récupérer la chaîne de connexion **directe**
    (hôte sans `-pooler`) du rôle propriétaire `neondb_owner` → `PG_ADMIN_URL`.
 2. **MongoDB Atlas** : nouveau projet, cluster *Free*, région Europe (Paris ou Frankfurt).

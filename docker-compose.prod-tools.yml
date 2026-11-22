@@ -12,7 +12,7 @@ name: triply-prod-tools
 services:
   # Rôles et schémas identity / travel sur Neon. Même script qu'en dev. Rejouable.
   pg-bootstrap:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     entrypoint: ["sh", "-c"]
     command:
       - >-

@@ -14,7 +14,7 @@ services:
   # Image avec pgvector déjà installé (doc/api/postgres/orm.md, section vecteur) ;
   # l'extension n'est pas activée tant qu'aucune migration ne la demande.
   postgres:
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector:pg18
     environment:
       POSTGRES_DB: triply
       POSTGRES_USER: postgres
@@ -24,7 +24,7 @@ services:
     ports:
       - "127.0.0.1:${PG_PORT:-5432}:5432"
     volumes:
-      - pg-data:/var/lib/postgresql/data
+      - pg-data:/var/lib/postgresql
       - ./infra/postgres/bootstrap.sql:/triply/bootstrap.sql:ro
       - ./infra/postgres/dev-init.sh:/docker-entrypoint-initdb.d/10-triply.sh:ro
     healthcheck:
