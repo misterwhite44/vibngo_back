@@ -48,6 +48,11 @@ REVOKE ALL ON SCHEMA travel   FROM PUBLIC;
 GRANT USAGE, CREATE ON SCHEMA identity TO triply_identity;
 GRANT USAGE, CREATE ON SCHEMA travel   TO triply_travel;
 
+-- Extensions demandées par les migrations, créées ici par le propriétaire de la base
+-- (les rôles des services n'ont pas le droit de les créer).
+-- pg_trgm : recherche partielle sur le nom des destinations (schéma travel).
+CREATE EXTENSION IF NOT EXISTS pg_trgm SCHEMA travel;
+
 -- Chaque service ne voit que son schéma par défaut. Aucun GRANT croisé :
 -- triply_travel n'a aucun USAGE sur identity, et inversement.
 ALTER ROLE triply_identity SET search_path = identity;

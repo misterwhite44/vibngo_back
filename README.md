@@ -39,8 +39,16 @@ Backend NestJS, Expo (React Native) côté front, LLM local via Ollama
 pour la génération d'itinéraire et le chatbot RAG.
 ## Bases de données : dev et prod
 
+**Nouveau dans l'équipe ?** Commencer par le guide de démarrage :
+[`doc/infra/demarrage.md`](doc/infra/demarrage.md) (installer, lancer les bases de dev, s'y
+connecter, modifier un schéma, accès à la prod, dépannage).
+
+Modèle PostgreSQL (MCD/MLD) : [`doc/api/postgres/mcd-mld.md`](doc/api/postgres/mcd-mld.md),
+implémenté en Prisma dans [`db/postgres/`](db/postgres/) (28 tables, schémas `identity` et
+`travel`, migrations appliquées automatiquement par `docker compose up -d`).
+
 Environnement de dev local (Docker Compose) et environnement de prod sur offres gratuites
-(Neon, MongoDB Atlas, Upstash, Redis Cloud), avec les mêmes scripts d'initialisation :
+(Neon, MongoDB Atlas, Upstash), avec les mêmes scripts d'initialisation :
 [`doc/infra/bases-de-donnees.md`](doc/infra/bases-de-donnees.md).
 
 ```bash

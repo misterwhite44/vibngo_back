@@ -1,0 +1,13 @@
+{
+  "name": "triply-db-postgres",
+  "private": true,
+  "description": "Schémas Prisma et migrations PostgreSQL de Triply (identity, travel)",
+  "scripts": {
+    "identity": "prisma --config identity/prisma.config.ts",
+    "travel": "prisma --config travel/prisma.config.ts"
+  },
+  "devDependencies": {
+    "prisma": "7.10.1",
+    "@prisma/client": "7.10.1"
+  }
+}

@@ -1,0 +1,398 @@
+// Schéma PostgreSQL `travel` — microservice Travel.
+// Source de vérité du modèle : doc/api/postgres/mcd-mld.md (MLD — travel).
+//
+// Prisma ne sait pas déclarer les CHECK, les index partiels, les contraintes DEFERRABLE :
+// ils sont écrits à la main à la fin de migrations/*_init/migration.sql.
+// Les identifiants d'un autre microservice (user_id, traveler_type_code) sont des
+// colonnes nues : jamais de relation Prisma, jamais de clé étrangère.
+
+generator client {
+  provider = "prisma-client"
+  output   = "./generated"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================== Catalogue ==============================
+
+model Country {
+  id   String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// ISO 3166-1 alpha-2
+  code String @unique @db.Char(2)
+  name String
+
+  cities City[]
+
+  @@map("countries")
+}
+
+model City {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  countryId String   @map("country_id") @db.Uuid
+  name      String
+  /// CHECK -90..90
+  latitude  Decimal? @db.Decimal(9, 6)
+  /// CHECK -180..180
+  longitude Decimal? @db.Decimal(9, 6)
+  /// IANA (Europe/Paris)
+  timezone  String?
+
+  country          Country         @relation(fields: [countryId], references: [id], onDelete: Restrict)
+  destinations     Destination[]
+  tripsFrom        Trip[]          @relation("TripOrigin")
+  tripsTo          Trip[]          @relation("TripDestination")
+  transportsFrom   TripTransport[] @relation("TransportFrom")
+  transportsTo     TripTransport[] @relation("TransportTo")
+
+  @@unique([countryId, name], map: "cities_country_name_key")
+  @@map("cities")
+}
+
+model Destination {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  cityId          String   @map("city_id") @db.Uuid
+  name            String
+  description     String?
+  coverImageUrl   String?  @map("cover_image_url")
+  /// Recalculé par un job. CHECK >= 0
+  popularityScore Decimal  @default(0) @map("popularity_score") @db.Decimal(5, 2)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  city       City       @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  activities Activity[]
+
+  @@unique([cityId, name], map: "destinations_city_name_key")
+  @@index([cityId], map: "destinations_city_idx")
+  /// Recherche partielle ?search= (extension pg_trgm, créée par infra/postgres/bootstrap.sql)
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "destinations_name_trgm_idx")
+  @@map("destinations")
+}
+
+/// Référentiel : catégories d'activité (hébergement compris)
+model ActivityCategory {
+  code            String  @id
+  label           String
+  isAccommodation Boolean @default(false) @map("is_accommodation")
+  isActive        Boolean @default(true) @map("is_active")
+
+  activities Activity[]
+
+  @@map("activity_categories")
+}
+
+model Partner {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name         String
+  contactEmail String?  @map("contact_email")
+  contactPhone String?  @map("contact_phone")
+  website      String?
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  activities Activity[]
+
+  @@map("partners")
+}
+
+model Activity {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  destinationId  String   @map("destination_id") @db.Uuid
+  categoryCode   String   @map("category_code")
+  partnerId      String?  @map("partner_id") @db.Uuid
+  name           String
+  description    String?
+  address        String?
+  /// CHECK -90..90
+  latitude       Decimal? @db.Decimal(9, 6)
+  /// CHECK -180..180
+  longitude      Decimal? @db.Decimal(9, 6)
+  /// CHECK € | €€ | €€€ | €€€€
+  priceRange     String?  @map("price_range")
+  openingHours   Json?    @map("opening_hours")
+  contactPhone   String?  @map("contact_phone")
+  contactWebsite String?  @map("contact_website")
+  bookingUrl     String?  @map("booking_url")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  destination         Destination                  @relation(fields: [destinationId], references: [id], onDelete: Cascade)
+  category            ActivityCategory             @relation(fields: [categoryCode], references: [code], onDelete: Restrict)
+  partner             Partner?                     @relation(fields: [partnerId], references: [id], onDelete: SetNull)
+  media               ActivityMedia[]
+  recommendedProfiles ActivityRecommendedProfile[]
+  steps               TripStep[]
+  reviews             Review[]
+
+  @@index([destinationId], map: "activities_destination_idx")
+  @@index([categoryCode], map: "activities_category_idx")
+  @@map("activities")
+}
+
+model ActivityMedia {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  activityId String   @map("activity_id") @db.Uuid
+  url        String
+  /// CHECK official | community ; auteur obligatoire si community
+  origin     String
+  /// Identifiant Identity (auteur si community), pas de clé étrangère
+  userId     String?  @map("user_id") @db.Uuid
+  position   Int      @default(0) @db.SmallInt
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  activity Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+  @@map("activity_media")
+}
+
+model ActivityRecommendedProfile {
+  activityId       String @map("activity_id") @db.Uuid
+  /// Code recopié depuis identity.traveler_types : pas de clé étrangère
+  travelerTypeCode String @map("traveler_type_code")
+
+  activity Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+  @@id([activityId, travelerTypeCode])
+  @@map("activity_recommended_profiles")
+}
+
+// ============================== Itinéraires ==============================
+
+model Trip {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Identifiant Identity (propriétaire), pas de clé étrangère
+  userId            String    @map("user_id") @db.Uuid
+  title             String?
+  /// CHECK draft | generated | active | completed | archived
+  status            String    @default("generated")
+  startDate         DateTime  @map("start_date") @db.Date
+  /// CHECK end_date >= start_date
+  endDate           DateTime  @map("end_date") @db.Date
+  /// CHECK >= 0
+  budget            Decimal?  @db.Decimal(10, 2)
+  /// CHECK plane | train | car | bus | boat | bike | walk
+  transportMode     String?   @map("transport_mode")
+  originCityId      String?   @map("origin_city_id") @db.Uuid
+  destinationCityId String    @map("destination_city_id") @db.Uuid
+  /// Clé Redis de la proposition validée (traçabilité)
+  proposalId        String?   @map("proposal_id")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  originCity      City?           @relation("TripOrigin", fields: [originCityId], references: [id], onDelete: Restrict)
+  destinationCity City            @relation("TripDestination", fields: [destinationCityId], references: [id], onDelete: Restrict)
+  travelers       TripTraveler[]
+  days            TripDay[]
+  transports      TripTransport[]
+  bookings        Booking[]
+  journalEntries  JournalEntry[]
+  journalExports  JournalExport[]
+
+  @@index([userId, status], map: "trips_user_status_idx")
+  @@index([userId, startDate(sort: Desc)], map: "trips_user_start_idx")
+  @@map("trips")
+}
+
+model TripTraveler {
+  tripId   String   @map("trip_id") @db.Uuid
+  /// Identifiant Identity, pas de clé étrangère
+  userId   String   @map("user_id") @db.Uuid
+  /// CHECK owner | guest ; un seul owner par voyage (index partiel en SQL)
+  role     String   @default("guest")
+  joinedAt DateTime @default(now()) @map("joined_at") @db.Timestamptz(6)
+
+  trip Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@id([tripId, userId])
+  @@map("trip_travelers")
+}
+
+model TripDay {
+  id       String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tripId   String   @map("trip_id") @db.Uuid
+  /// CHECK >= 1
+  dayIndex Int      @map("day_index") @db.SmallInt
+  date     DateTime @db.Date
+
+  trip           Trip           @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  steps          TripStep[]
+  journalEntries JournalEntry[]
+
+  @@unique([tripId, dayIndex], map: "trip_days_trip_index_key")
+  @@unique([tripId, date], map: "trip_days_trip_date_key")
+  @@map("trip_days")
+}
+
+model TripStep {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tripDayId  String    @map("trip_day_id") @db.Uuid
+  /// CHECK >= 1 ; UNIQUE (trip_day_id, sequence) DEFERRABLE écrit en SQL
+  sequence   Int       @db.SmallInt
+  /// CHECK activity | transport | accommodation | meal ; activity => activity_id obligatoire
+  type       String
+  activityId String?   @map("activity_id") @db.Uuid
+  startTime  DateTime? @map("start_time") @db.Timestamptz(6)
+  endTime    DateTime? @map("end_time") @db.Timestamptz(6)
+  /// CHECK planned | confirmed | modified | skipped
+  status     String    @default("planned")
+  notes      String?
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  day            TripDay         @relation(fields: [tripDayId], references: [id], onDelete: Cascade)
+  activity       Activity?       @relation(fields: [activityId], references: [id], onDelete: SetNull)
+  transports     TripTransport[]
+  bookings       Booking[]
+  journalEntries JournalEntry[]
+
+  /// DEFERRABLE INITIALLY IMMEDIATE : ajouté à la main dans la migration
+  @@unique([tripDayId, sequence], map: "trip_steps_day_sequence_key")
+  @@index([tripDayId, sequence], map: "trip_steps_day_idx")
+  @@index([activityId], map: "trip_steps_activity_idx")
+  @@map("trip_steps")
+}
+
+model TripTransport {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tripId      String    @map("trip_id") @db.Uuid
+  tripStepId  String?   @map("trip_step_id") @db.Uuid
+  /// CHECK outbound | return | intra
+  leg         String
+  /// CHECK plane | train | car | bus | boat | bike | walk
+  mode        String
+  fromCityId  String?   @map("from_city_id") @db.Uuid
+  toCityId    String?   @map("to_city_id") @db.Uuid
+  departsAt   DateTime? @map("departs_at") @db.Timestamptz(6)
+  arrivesAt   DateTime? @map("arrives_at") @db.Timestamptz(6)
+  distanceKm  Decimal?  @map("distance_km") @db.Decimal(8, 2)
+  durationMin Int?      @map("duration_min")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  trip     Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  step     TripStep? @relation(fields: [tripStepId], references: [id], onDelete: SetNull)
+  fromCity City?     @relation("TransportFrom", fields: [fromCityId], references: [id], onDelete: Restrict)
+  toCity   City?     @relation("TransportTo", fields: [toCityId], references: [id], onDelete: Restrict)
+
+  @@index([tripId], map: "trip_transports_trip_idx")
+  @@map("trip_transports")
+}
+
+model Booking {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tripId        String    @map("trip_id") @db.Uuid
+  tripStepId    String?   @map("trip_step_id") @db.Uuid
+  /// CHECK flight | train | accommodation | activity
+  category      String
+  provider      String?
+  referenceCode String?   @map("reference_code")
+  bookingUrl    String?   @map("booking_url")
+  /// CHECK pending | confirmed | cancelled
+  status        String    @default("pending")
+  reminderAt    DateTime? @map("reminder_at") @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  trip Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  step TripStep? @relation(fields: [tripStepId], references: [id], onDelete: SetNull)
+
+  // Index partiels (référence unique, rappels à envoyer) : écrits en SQL
+  @@map("bookings")
+}
+
+// ======================= Historique et carnet de voyage =======================
+
+model JournalEntry {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tripId      String   @map("trip_id") @db.Uuid
+  tripDayId   String?  @map("trip_day_id") @db.Uuid
+  tripStepId  String?  @map("trip_step_id") @db.Uuid
+  /// Identifiant Identity (auteur), pas de clé étrangère
+  userId      String   @map("user_id") @db.Uuid
+  text        String?
+  /// CHECK 30 caractères max.
+  summaryWord String?  @map("summary_word")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  trip   Trip           @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  day    TripDay?       @relation(fields: [tripDayId], references: [id], onDelete: SetNull)
+  step   TripStep?      @relation(fields: [tripStepId], references: [id], onDelete: SetNull)
+  photos JournalPhoto[]
+
+  @@index([tripId, createdAt], map: "journal_entries_trip_idx")
+  @@map("journal_entries")
+}
+
+model JournalPhoto {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  journalEntryId String   @map("journal_entry_id") @db.Uuid
+  url            String
+  /// UNIQUE (journal_entry_id, position) DEFERRABLE écrit en SQL
+  position       Int      @default(0) @db.SmallInt
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  entry JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+
+  /// DEFERRABLE INITIALLY IMMEDIATE : ajouté à la main dans la migration
+  @@unique([journalEntryId, position], map: "journal_photos_entry_position_key")
+  @@map("journal_photos")
+}
+
+model JournalExport {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tripId      String    @map("trip_id") @db.Uuid
+  /// Identifiant Identity (demandeur), pas de clé étrangère
+  userId      String    @map("user_id") @db.Uuid
+  /// CHECK pending | processing | done | failed ; done => pdf_url obligatoire
+  status      String    @default("pending")
+  pdfUrl      String?   @map("pdf_url")
+  /// Identifiant BullMQ
+  jobId       String?   @map("job_id")
+  requestedAt DateTime  @default(now()) @map("requested_at") @db.Timestamptz(6)
+  completedAt DateTime? @map("completed_at") @db.Timestamptz(6)
+
+  trip Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@map("journal_exports")
+}
+
+// ============================== Favoris et avis ==============================
+
+model Favorite {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Identifiant Identity, pas de clé étrangère
+  userId     String   @map("user_id") @db.Uuid
+  /// CHECK destination | activity | city
+  targetType String   @map("target_type")
+  /// Cible polymorphe : pas de clé étrangère
+  targetId   String   @map("target_id") @db.Uuid
+  /// CHECK favorite | considered
+  status     String   @default("favorite")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([userId, targetType, targetId], map: "favorites_user_target_key")
+  @@index([userId, createdAt(sort: Desc)], map: "favorites_user_created_idx")
+  @@index([targetType, targetId], map: "favorites_target_idx")
+  @@map("favorites")
+}
+
+model Review {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  activityId String   @map("activity_id") @db.Uuid
+  /// Identifiant Identity (auteur), pas de clé étrangère
+  userId     String   @map("user_id") @db.Uuid
+  /// CHECK 1..5
+  rating     Int      @db.SmallInt
+  comment    String?
+  /// CHECK published | hidden | reported
+  status     String   @default("published")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  activity Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+  @@unique([activityId, userId], map: "reviews_activity_user_key")
+  // Index partiel sur les avis publiés : écrit en SQL
+  @@map("reviews")
+}

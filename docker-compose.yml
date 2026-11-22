@@ -32,6 +32,39 @@ services:
       interval: 5s
       retries: 10
 
+  # Migrations Prisma (doc/api/postgres/orm.md) : un conteneur par schéma, qui applique les
+  # migrations de db/postgres/<schéma>/migrations puis s'arrête. Rejouable :
+  #   docker compose run --rm identity-migrate
+  identity-migrate:
+    image: node:22-alpine
+    working_dir: /db
+    command: ["sh", "-c", "npm ci --no-audit --no-fund --loglevel=error && npx prisma migrate deploy --config identity/prisma.config.ts"]
+    environment:
+      DATABASE_URL: postgresql://triply_identity:${PG_IDENTITY_PASSWORD}@postgres:5432/triply?schema=identity
+    volumes:
+      - ./db/postgres:/db
+      - db-node-modules:/db/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  travel-migrate:
+    image: node:22-alpine
+    working_dir: /db
+    command: ["sh", "-c", "npm ci --no-audit --no-fund --loglevel=error && npx prisma migrate deploy --config travel/prisma.config.ts"]
+    environment:
+      DATABASE_URL: postgresql://triply_travel:${PG_TRAVEL_PASSWORD}@postgres:5432/triply?schema=travel
+    volumes:
+      - ./db/postgres:/db
+      - db-node-modules:/db/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      identity-migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
   # MongoDB : replica set à un nœud, comme en prod (doc/api/mongo/choix-odm-mongodb.md).
   # Même version majeure que le cluster gratuit Atlas (8.0).
   mongo:
@@ -117,5 +150,6 @@ services:
 
 volumes:
   pg-data:
+  db-node-modules:
   mongo-data:
   redis-core-data:

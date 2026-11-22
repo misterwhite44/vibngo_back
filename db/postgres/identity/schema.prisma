@@ -1,0 +1,150 @@
+// Schéma PostgreSQL `identity` — microservice Identity.
+// Source de vérité du modèle : doc/api/postgres/mcd-mld.md (MLD — identity).
+//
+// Prisma ne sait pas déclarer les CHECK, les index partiels ou sur expression :
+// ils sont écrits à la main à la fin de migrations/*_init/migration.sql.
+// Toute colonne ajoutée ici se reporte dans le MLD, et inversement.
+
+generator client {
+  provider = "prisma-client"
+  output   = "./generated"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Unicité sur lower(email) : index écrit en SQL (users_email_key)
+  email        String
+  /// argon2id, jamais le mot de passe
+  passwordHash String    @map("password_hash")
+  phone        String?
+  /// CHECK active | suspended | deleted
+  status       String    @default("active")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt    DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  answers       QuestionnaireAnswer[]
+  profile       TravelerProfile?
+  settings      Settings?
+  notifications Notification[]
+
+  @@map("users")
+}
+
+/// Référentiel : profils voyageur. Codes en texte, jamais d'enum SQL.
+model TravelerType {
+  code        String  @id
+  label       String
+  description String?
+  isActive    Boolean @default(true) @map("is_active")
+
+  profiles TravelerProfile[]
+
+  @@map("traveler_types")
+}
+
+/// Référentiel : les 6 axes (urbanite, intensite, planification, social, confort, decouverte)
+model ProfileAxis {
+  code     String @id
+  label    String
+  position Int    @unique @db.SmallInt
+
+  questions QuestionnaireQuestion[]
+  scores    TravelerProfileScore[]
+
+  @@map("profile_axes")
+}
+
+model QuestionnaireQuestion {
+  id            String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code          String  @unique
+  label         String
+  axisCode      String  @map("axis_code")
+  position      Int     @unique @db.SmallInt
+  weight        Decimal @default(1) @db.Decimal(4, 2)
+  reverseScored Boolean @default(false) @map("reverse_scored")
+  isActive      Boolean @default(true) @map("is_active")
+
+  axis    ProfileAxis           @relation(fields: [axisCode], references: [code], onDelete: Restrict)
+  answers QuestionnaireAnswer[]
+
+  @@map("questionnaire_questions")
+}
+
+model QuestionnaireAnswer {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  questionId String   @map("question_id") @db.Uuid
+  /// CHECK 1..5
+  value      Int      @db.SmallInt
+  answeredAt DateTime @default(now()) @map("answered_at") @db.Timestamptz(6)
+
+  user     User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question QuestionnaireQuestion @relation(fields: [questionId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, questionId], map: "questionnaire_answers_user_question_key")
+  @@map("questionnaire_answers")
+}
+
+model TravelerProfile {
+  userId           String   @id @map("user_id") @db.Uuid
+  dominantTypeCode String   @map("dominant_type_code")
+  computedAt       DateTime @default(now()) @map("computed_at") @db.Timestamptz(6)
+
+  user         User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dominantType TravelerType           @relation(fields: [dominantTypeCode], references: [code], onDelete: Restrict)
+  scores       TravelerProfileScore[]
+
+  @@map("traveler_profiles")
+}
+
+model TravelerProfileScore {
+  userId   String  @map("user_id") @db.Uuid
+  axisCode String  @map("axis_code")
+  /// CHECK 0..100
+  score    Decimal @db.Decimal(5, 2)
+
+  profile TravelerProfile @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  axis    ProfileAxis     @relation(fields: [axisCode], references: [code], onDelete: Restrict)
+
+  @@id([userId, axisCode])
+  @@map("traveler_profile_scores")
+}
+
+model Settings {
+  userId               String   @id @map("user_id") @db.Uuid
+  notificationsEnabled Boolean  @default(true) @map("notifications_enabled")
+  /// Consentement explicite : false par défaut
+  geolocationEnabled   Boolean  @default(false) @map("geolocation_enabled")
+  communityVisible     Boolean  @default(true) @map("community_visible")
+  /// CHECK standard | strict
+  privacyLevel         String   @default("standard") @map("privacy_level")
+  offlineModeEnabled   Boolean  @default(false) @map("offline_mode_enabled")
+  updatedAt            DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("settings")
+}
+
+/// Bonus
+model Notification {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  type        String
+  message     String
+  payload     Json?
+  scheduledAt DateTime? @map("scheduled_at") @db.Timestamptz(6)
+  sentAt      DateTime? @map("sent_at") @db.Timestamptz(6)
+  readAt      DateTime? @map("read_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)], map: "notifications_user_created_idx")
+  @@map("notifications")
+}
