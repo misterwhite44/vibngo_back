@@ -31,12 +31,14 @@ Prérequis : Docker Desktop (ou Docker Engine + Compose v2). Rien d'autre à ins
 ```bash
 cp .env.example .env        # Windows PowerShell : Copy-Item .env.example .env
 docker compose up -d
-docker compose ps           # tout doit être "healthy", mongo-init "Exited (0)"
+docker compose ps           # bases "healthy", *-migrate et mongo-init "Exited (0)"
 ```
 
 Au premier démarrage :
 
 - PostgreSQL crée la base `triply`, puis les rôles et les schémas ;
+- `identity-migrate` puis `travel-migrate` appliquent les migrations Prisma de
+  `db/postgres/` : les 28 tables du MLD (voir « Tables PostgreSQL » ci-dessous) ;
 - `mongo-init` initialise le replica set, crée les collections, validateurs et index, puis s'arrête.
 
 Les microservices lancés sur la machine utilisent les URLs déjà prêtes dans `.env`
@@ -53,9 +55,34 @@ service (`postgres`, `mongo`, `redis-core`, `redis-cache`) et retirer `directCon
 | Console MongoDB | `docker compose exec mongo mongosh assistant` |
 | Console Redis | `docker compose exec redis-core redis-cli -a core_dev` |
 
-Prisma en dev, par service : `prisma migrate dev --name <nom>` avec l'URL du service. Le
-rôle ne voit que son schéma : `triply_travel` n'a aucun droit sur `identity`, et personne ne
-peut créer de table dans `public`.
+Le rôle ne voit que son schéma : `triply_travel` n'a aucun droit sur `identity`, et personne
+ne peut créer de table dans `public`.
+
+### Tables PostgreSQL
+
+Le modèle est décrit dans `doc/api/postgres/mcd-mld.md` et implémenté dans `db/postgres/`
+(un `schema.prisma` et des migrations par schéma). Les conteneurs `*-migrate` l'appliquent à
+chaque `docker compose up -d` ; rien à faire à la main.
+
+| Besoin | Commande |
+|---|---|
+| Rejouer les migrations | `docker compose run --rm identity-migrate` (ou `travel-migrate`) |
+| Tester les contraintes (rien n'est gardé en base) | `docker compose exec -T postgres psql -U triply_travel -d triply -f - < db/postgres/tests/travel.sql` (idem `identity`) |
+| Voir les tables | `docker compose exec postgres psql -U triply_travel -d triply -c "\dt"` |
+
+Modifier le schéma (sur sa machine, Node.js 20+ installé) :
+
+```bash
+cd db/postgres
+npm install
+# PowerShell : $env:DATABASE_URL="postgresql://triply_travel:travel_dev@localhost:5432/triply?schema=travel"
+export DATABASE_URL="postgresql://triply_travel:travel_dev@localhost:5432/triply?schema=travel"
+# 1. modifier travel/schema.prisma (et le MLD)
+npm run travel -- migrate dev --name <ce_qui_change>     # écrit la migration et l'applique
+# CHECK, index partiel, DEFERRABLE : ajouter --create-only, compléter le .sql, relancer sans
+```
+
+Une migration commitée ne se modifie plus : on en écrit une nouvelle.
 
 Dev et prod tournent en **PostgreSQL 18** (version par défaut de Neon). Un volume créé avec
 une version plus ancienne ne démarre pas en 18 : `docker compose down -v` puis `up -d`.
@@ -106,12 +133,18 @@ passe que le script va donner aux rôles, à reporter ensuite dans les URLs des 
 
 ```bash
 docker compose -f docker-compose.prod-tools.yml --env-file .env.production run --rm pg-bootstrap
+docker compose -f docker-compose.prod-tools.yml --env-file .env.production run --rm identity-migrate
+docker compose -f docker-compose.prod-tools.yml --env-file .env.production run --rm travel-migrate
 docker compose -f docker-compose.prod-tools.yml --env-file .env.production run --rm mongo-init
 docker compose -f docker-compose.prod-tools.yml --env-file .env.production run --rm check
 ```
 
-`check` se connecte avec les identifiants **des services** (pas les admins) et doit finir sur
-`OK`.
+`check` se connecte avec les identifiants **des services** (pas les admins), affiche le nombre
+de tables de chaque schéma (9 pour `identity`, 19 pour `travel`) et doit finir sur `OK`.
+
+À chaque nouvelle migration commitée, relancer `identity-migrate` / `travel-migrate` : seules
+les migrations manquantes sont appliquées. Relancer aussi `pg-bootstrap` si
+`infra/postgres/bootstrap.sql` a changé (il est rejouable).
 
 ### 4. Brancher les services
 
