@@ -37,3 +37,13 @@ valide, sinon le cycle recommence sur une nouvelle proposition.
 
 Backend NestJS, Expo (React Native) côté front, LLM local via Ollama
 pour la génération d'itinéraire et le chatbot RAG.
+## Bases de données : dev et prod
+
+Environnement de dev local (Docker Compose) et environnement de prod sur offres gratuites
+(Neon, MongoDB Atlas, Upstash, Redis Cloud), avec les mêmes scripts d'initialisation :
+[`doc/infra/bases-de-donnees.md`](doc/infra/bases-de-donnees.md).
+
+```bash
+cp .env.example .env
+docker compose up -d
+```

@@ -1,1 +1,7 @@
 *.txt
+
+# Secrets et environnements locaux : seuls les modèles *.example sont commités
+.env
+.env.*
+!.env.example
+!.env.production.example
