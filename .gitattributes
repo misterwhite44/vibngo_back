@@ -1,0 +1,5 @@
+# Scripts montés dans des conteneurs Linux : toujours en LF, même depuis Windows
+*.sh  text eol=lf
+*.sql text eol=lf
+*.js  text eol=lf
+*.yml text eol=lf

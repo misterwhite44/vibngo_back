@@ -1,0 +1,64 @@
+# Outils ponctuels pour les bases de PRODUCTION (offres gratuites : Neon, MongoDB Atlas,
+# Upstash, Redis Cloud). Rien ne tourne en continu : chaque service est un job à lancer
+# à la main, depuis un poste qui a Docker. Aucun client psql/mongosh à installer.
+# Mode d'emploi : doc/infra/bases-de-donnees.md
+#
+#   docker compose -f docker-compose.prod-tools.yml --env-file .env.production run --rm pg-bootstrap
+#   docker compose -f docker-compose.prod-tools.yml --env-file .env.production run --rm mongo-init
+#   docker compose -f docker-compose.prod-tools.yml --env-file .env.production run --rm check
+
+name: triply-prod-tools
+
+services:
+  # Rôles et schémas identity / travel sur Neon. Même script qu'en dev. Rejouable.
+  pg-bootstrap:
+    image: postgres:18-alpine
+    entrypoint: ["sh", "-c"]
+    command:
+      - >-
+        psql "$$PG_ADMIN_URL" -v ON_ERROR_STOP=1
+        -v identity_password="$$PG_IDENTITY_PASSWORD"
+        -v travel_password="$$PG_TRAVEL_PASSWORD"
+        -f /triply/bootstrap.sql
+    environment:
+      PG_ADMIN_URL: ${PG_ADMIN_URL:?définir PG_ADMIN_URL dans .env.production}
+      PG_IDENTITY_PASSWORD: ${PG_IDENTITY_PASSWORD:?définir PG_IDENTITY_PASSWORD dans .env.production}
+      PG_TRAVEL_PASSWORD: ${PG_TRAVEL_PASSWORD:?définir PG_TRAVEL_PASSWORD dans .env.production}
+    volumes:
+      - ./infra/postgres/bootstrap.sql:/triply/bootstrap.sql:ro
+
+  # Collections, validateurs et index sur Atlas. Même script qu'en dev. Rejouable.
+  mongo-init:
+    image: mongo:8.0
+    entrypoint: ["sh", "-c"]
+    command: ['mongosh "$$MONGO_ADMIN_URL" --quiet --file /triply/init.js']
+    environment:
+      MONGO_ADMIN_URL: ${MONGO_ADMIN_URL:?définir MONGO_ADMIN_URL dans .env.production}
+      MONGO_DB: ${MONGO_DB:-assistant}
+    volumes:
+      - ./infra/mongo/init.js:/triply/init.js:ro
+
+  # Vérifie que chaque base de prod répond avec les identifiants des services.
+  check:
+    image: mongo:8.0
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        set -e
+        apt-get -qq update >/dev/null 2>&1 || true
+        apt-get -qq install -y postgresql-client redis-tools >/dev/null 2>&1
+        # psql ne connaît pas le paramètre Prisma ?schema= : on le retire de l'URL
+        nos() { echo "$$1" | sed -E 's/schema=[^&]*&?//; s/[?&]$$//'; }
+        echo "-- PostgreSQL (identity)"; psql "$$(nos "$$IDENTITY_DATABASE_URL_DIRECT")" -tAc "select current_user, current_schemas(false)"
+        echo "-- PostgreSQL (travel)";   psql "$$(nos "$$TRAVEL_DATABASE_URL_DIRECT")" -tAc "select current_user, current_schemas(false)"
+        echo "-- MongoDB";               mongosh "$$MONGO_URL" --quiet --eval "db.getSiblingDB('$$MONGO_DB').getCollectionNames()"
+        echo "-- redis-core";            redis-cli -u "$$REDIS_CORE_URL" --no-auth-warning ping | grep PONG
+        echo "-- redis-cache";           redis-cli -u "$$REDIS_CACHE_URL" --no-auth-warning ping | grep PONG
+        echo "OK"
+    environment:
+      IDENTITY_DATABASE_URL_DIRECT: ${IDENTITY_DATABASE_URL_DIRECT:?}
+      TRAVEL_DATABASE_URL_DIRECT: ${TRAVEL_DATABASE_URL_DIRECT:?}
+      MONGO_URL: ${MONGO_URL:?}
+      MONGO_DB: ${MONGO_DB:-assistant}
+      REDIS_CORE_URL: ${REDIS_CORE_URL:?}
+      REDIS_CACHE_URL: ${REDIS_CACHE_URL:?}
